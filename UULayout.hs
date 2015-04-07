@@ -64,6 +64,7 @@ uulayoutTests = hspec $ do
           nsp "3"])
           === [1,2,3]
 
+-- not used see pLaidout
 laidout e = do
     pSpaces
     lbrace <- optional (pSym '{')

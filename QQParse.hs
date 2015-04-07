@@ -425,7 +425,7 @@ data HParser = HParser
  ,pLBrace :: HP ()
  ,pRBrace :: HP ()
 
-
+ ,pLaidout_ :: (forall row. (HParser -> HP row) -> HP [row])
 
  ,isSy :: S -> Char -> Bool
 
@@ -668,14 +668,14 @@ instance Default HParser where
       in Match <$> s pPat <*> (normalB <|> guardedB) <*> s pWhere
 
   ,pLetE = \(S s) ->
-     let decs = pToken "let" *> laidout (s pDec)
+     let decs = pToken "let" *> s (pLaidout pDec)
      in LetE <$> decs <*> (pSpaces *> pToken "in" *> s pExp)
 
   ,pCaseE = \(S s) -> CaseE <$> (pToken "case" *> s pExp <* pToken "of")
-                            <*> laidout (s pMatch) -- ^ @{ case e of m1; m2 }@
+                            <*> s (pLaidout pMatch) -- ^ @{ case e of m1; m2 }@
 
   ,pDoE = \(S s) ->
-       let stmts = pToken "do" *> laidout (s pStmt)
+       let stmts = pToken "do" *> s (pLaidout pStmt)
        in DoE <$> stmts
 
   ,pArithSeqE = \(S s) ->
@@ -707,7 +707,7 @@ instance Default HParser where
     let mergeFunDs (FunD x a : FunD y b : xs) | x == y = mergeFunDs (FunD x (a ++ b) : xs)
         mergeFunDs (x : xs) = x : mergeFunDs xs
         mergeFunDs [] = []
-    in mergeFunDs <$> laidout (s pDec)
+    in mergeFunDs <$> s (pLaidout pDec)
 
 
   ,pDec = \(S s) -> s pValD
@@ -925,8 +925,25 @@ instance Default HParser where
   ,pSemi = \ _ -> () <$ pSym ';' -- or do layout here?
   ,pLBrace = \_ -> () <$ pSym '{'
   ,pRBrace = \_ -> () <$ pSym '}'
+
+
+  ,pLaidout_ = \ e (S s) -> do
+    pSpaces
+    lbrace <- optional (s pLBrace)
+    LineColPos _ c' _ <- pPos
+    pList_ng
+        (do
+          munched <- pMunch (`elem` " \t\n;")
+          LineColPos _ c _ <- pPos
+          guard (isJust lbrace || ';' `elem` munched || c == c')
+          s e)
+      <* if isJust lbrace then s pRBrace else pure ()
+
   }
 
+
+pLaidout :: (HParser -> HP a) -> t -> HP [a]
+pLaidout x _ (S s)  = s $ \hp _ -> pLaidout_ hp x (S s)
 
 -- | s (qual pVar)
 qual :: (HParser -> HP Name) -> t -> HP Name
